@@ -664,13 +664,16 @@ class QuantyCalculation(object):
         loopfor_pazd = 'for ' + loop_pazd + ' do'
         loopd_azn = '({1:10.3e} - {0:10.3e})/({2} - 1)'
 
-        # first only loop on one parameter
-        loopparam = 'Bz_i_value'
-        loopa = 0.0  # from
-        loopz = 1.0  # to
-        loopn = 11   # number of steps
-        loopd = loopd_azn.format(loopa, loopz, loopn)
-        loopfor = loopfor_pazd.format(loopparam, loopa, loopz, loopd)
+        # we might actually get this from a different data structure (depends on UI implementation)
+        loopparams = ['Bz_i_value', 'Bx_i_value']
+        loopa = {'Bz_i_value': 0.0, 'Bx_i_value': 0.0}  # from
+        loopz = {'Bz_i_value': 1.0, 'Bx_i_value': 0.1}  # to
+        loopn = {'Bz_i_value': 11, 'Bx_i_value': 3}   # number of steps
+        loopd = {}
+        loopfors = {}
+        for param in loopparams:
+            loopd[param] = loopd_azn.format(loopa[param], loopz[param], loopn[param])
+            loopfors[param] = loopfor_pazd.format(param, loopa[param], loopz[param], loopd[param])
 
         for term in self.hamiltonianData:
             configurations = self.hamiltonianData[term]
@@ -706,15 +709,15 @@ class QuantyCalculation(object):
                             value = k1[2] * small
 
                     key = '${}_{}_value'.format(parameter, suffix)
-                    if key == '$' + loopparam:
-                        replacements[key] = '_'.join([loopparampref, loopparam])
+                    if key[0] == '$' and key[1:] in loopparams:
+                        replacements[key] = '_'.join([loopparampref, key[1:]])
                     else:
                         replacements[key] = '{}'.format(value)
 
                     if scaleFactor is not None:
                         key = '${}_{}_scale'.format(parameter, suffix)
-                        if key == '$' + loopparam:
-                            replacements[key] = '_'.join([loopparampref, loopparam])
+                        if key[0] == '$' and key[1:] in loopparams:
+                            replacements[key] = '_'.join([loopparampref, key[1:]])
                         else:
                             replacements[key] = '{}'.format(scaleFactor)
 
@@ -745,7 +748,8 @@ class QuantyCalculation(object):
         #     json.dump(replacements, f, indent=2)
 
         with open(self.baseName + '.lua', 'w') as f:
-            f.write(loopfor + '\n')
+            for param, loopfor in loopfors.items():
+                f.write(loopfor + '\n')
             f.write(self.input)
             objs = ['Giso', 'Gr', 'Gl', 'Gv', 'Gh']
             objskv = objs  # init
@@ -755,12 +759,16 @@ class QuantyCalculation(object):
             f.write('    for specpref,specobj in pairs(pols) do\n')
             f.write('        if specobj then\n')  # check if exists
             filepath = '.'  # fixed output folder at first
-            fileident = '\'' + loopparam + '=\'..' + loopparampref + '_' + loopparam
+            fileidentarr = []
+            for param in loopparams:
+                fileidentarr.append('\'' + param + '=\'..' + loopparampref + '_' + param)
+            fileident = '..\'_\'..'.join(fileidentarr)
             filename = '\'' + filepath + '/' + '\'..specpref..\'_\'..' + fileident + '..\'.spec\''
             f.write('            specobj.Print({{\'file\', ' + filename + '}})\n')
             f.write('        end\n')
             f.write('    end\n')
-            f.write('end\n')
+            for param, loopfor in loopfors.items():
+                f.write('end  -- ends %s loop\n' % param)
 
         self.output = str()
 
