@@ -658,6 +658,20 @@ class QuantyCalculation(object):
         replacements['$NPsisAuto'] = self.nPsisAuto
         replacements['$NPsis'] = self.nPsis
 
+        # loop configure
+        loopparampref = 'loop_x'  # loop parameter prefix
+        loop_pazd = loopparampref + '_{0:s} = {1:10.3e}, {2:10.3e} + ({3:s})/10., {3:s}'
+        loopfor_pazd = 'for ' + loop_pazd + ' do'
+        loopd_azn = '({1:10.3e} - {0:10.3e})/({2} - 1)'
+
+        # first only loop on one parameter
+        loopparam = 'Bz_i_value'
+        loopa = 0.0  # from
+        loopz = 1.0  # to
+        loopn = 11   # number of steps
+        loopd = loopd_azn.format(loopa, loopz, loopn)
+        loopfor = loopfor_pazd.format(loopparam, loopa, loopz, loopd)
+
         for term in self.hamiltonianData:
             configurations = self.hamiltonianData[term]
             for configuration, parameters in configurations.items():
@@ -692,11 +706,17 @@ class QuantyCalculation(object):
                             value = k1[2] * small
 
                     key = '${}_{}_value'.format(parameter, suffix)
-                    replacements[key] = '{}'.format(value)
+                    if key == '$' + loopparam:
+                        replacements[key] = '_'.join([loopparampref, loopparam])
+                    else:
+                        replacements[key] = '{}'.format(value)
 
                     if scaleFactor is not None:
                         key = '${}_{}_scale'.format(parameter, suffix)
-                        replacements[key] = '{}'.format(scaleFactor)
+                        if key == '$' + loopparam:
+                            replacements[key] = '_'.join([loopparampref, loopparam])
+                        else:
+                            replacements[key] = '{}'.format(scaleFactor)
 
             checkState = self.hamiltonianState[term]
             if checkState > 0:
@@ -725,7 +745,22 @@ class QuantyCalculation(object):
         #     json.dump(replacements, f, indent=2)
 
         with open(self.baseName + '.lua', 'w') as f:
+            f.write(loopfor + '\n')
             f.write(self.input)
+            objs = ['Giso', 'Gr', 'Gl', 'Gv', 'Gh']
+            objskv = objs  # init
+            for i in range(0,len(objs)):
+                objskv[i] = '[\'' + objs[i] + '\'] = ' + objs[i]
+            f.write('pols = {' + ', '.join(objskv) + '}\n')
+            f.write('    for specpref,specobj in pairs(pols) do\n')
+            f.write('        if specobj then\n')  # check if exists
+            filepath = '.'  # fixed output folder at first
+            fileident = '\'' + loopparam + '=\'..' + loopparampref + '_' + loopparam
+            filename = '\'' + filepath + '/' + '\'..specpref..\'_\'..' + fileident + '..\'.spec\''
+            f.write('            specobj.Print({{\'file\', ' + filename + '}})\n')
+            f.write('        end\n')
+            f.write('    end\n')
+            f.write('end\n')
 
         self.output = str()
 
